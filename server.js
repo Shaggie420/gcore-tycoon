@@ -62,7 +62,9 @@ function blankStats() {
   return {
     money: 50, tokens: 0, prestige: 0, level: 1, xp: 0, // start with $50 to buy a first gen
     genSlots: 6, multi: 1,
-    gens: [] // [{tier, slot}]
+    gens: [], // [{tier, slot, stored}]
+    skin: { body: '#a463d6', hat: 0 }, // wardrobe appearance
+    farmXP: 0, activeCrop: 1          // farming progress
   };
 }
 
@@ -122,10 +124,17 @@ wss.on('connection', (ws) => {
       };
       players[id] = player;
 
+      // Offline time so the client can grant capped "while you were away" earnings.
+      const awayMs = acc.lastSeen ? Math.max(0, Date.now() - acc.lastSeen) : 0;
+      acc.lastSeen = Date.now();
+      // Make sure older accounts have the newer fields.
+      if (!acc.stats.skin) acc.stats.skin = { body: '#a463d6', hat: 0 };
+      if (acc.stats.farmXP == null) acc.stats.farmXP = 0;
+      if (acc.stats.activeCrop == null) acc.stats.activeCrop = 1;
       // Tell the new player everything
       ws.send(JSON.stringify({
         t: 'init',
-        id,
+        id, awayMs,
         you: { name, plot: acc.plot, stats: acc.stats },
         world: { w: WORLD_W, h: WORLD_H, hub: HUB, plotCols: PLOT_COLS, plotW: PLOT_W, plotH: PLOT_H, plotGap: PLOT_GAP, plotTop: PLOT_TOP },
         plotRect: plotRect(acc.plot)
@@ -158,6 +167,11 @@ wss.on('connection', (ws) => {
       st.genSlots = +s.genSlots || 6;
       st.multi = +s.multi || 1;
       if (Array.isArray(s.gens)) st.gens = s.gens.slice(0, 64);
+      if (s.skin && typeof s.skin === 'object') st.skin = { body: ('' + (s.skin.body || '#a463d6')).slice(0, 9), hat: +s.skin.hat || 0 };
+      st.farmXP = +s.farmXP || 0;
+      st.activeCrop = +s.activeCrop || 1;
+      // keep lastSeen fresh so a crash still gives sane offline earnings
+      if (accounts[player.key]) accounts[player.key].lastSeen = Date.now();
       return;
     }
 
@@ -171,6 +185,7 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     if (player) {
+      if (accounts[player.key]) accounts[player.key].lastSeen = Date.now();
       broadcast({ t: 'leave', id: player.id });
       delete players[id];
       saveAccounts();
@@ -182,7 +197,8 @@ wss.on('connection', (ws) => {
 function snapshot() {
   return Object.values(players).map(p => ({
     id: p.id, name: p.name, x: Math.round(p.x), y: Math.round(p.y), dir: p.dir,
-    plot: p.plot, prestige: p.stats.prestige || 0, gens: p.stats.gens || []
+    plot: p.plot, prestige: p.stats.prestige || 0, gens: p.stats.gens || [],
+    skin: p.stats.skin || { body: '#a463d6', hat: 0 }
   }));
 }
 
