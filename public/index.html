@@ -83,6 +83,9 @@ canvas{display:block;position:fixed;inset:0}
 .controls{position:fixed;bottom:12px;right:12px;z-index:10;font-size:.72rem;color:var(--t3);text-align:right;line-height:1.5}
 .controls b{color:var(--t2)}
 
+#collectAllBtn{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:13;background:var(--green);color:#063;border:none;padding:11px 24px;border-radius:100px;font-weight:800;font-size:.9rem;cursor:pointer;font-family:inherit;box-shadow:0 4px 16px rgba(74,222,128,.35)}
+#collectAllBtn:hover{background:#22c55e}
+
 /* MOBILE TOUCH CONTROLS (hidden until body.touch) */
 #joystick{position:fixed;bottom:28px;left:28px;width:130px;height:130px;border-radius:50%;background:rgba(18,18,26,.45);border:2px solid rgba(205,140,255,.3);z-index:14;display:none;touch-action:none}
 #joythumb{position:absolute;top:50%;left:50%;width:56px;height:56px;border-radius:50%;background:rgba(164,99,214,.85);border:2px solid #cd8cff;transform:translate(-50%,-50%)}
@@ -149,6 +152,8 @@ body.touch .controls{display:none}
 
 <div class="controls"><b>WASD</b> move · <b>Ctrl/Shift</b> sprint · <b>E</b> interact · <b>Enter</b> chat</div>
 
+<button id="collectAllBtn" onclick="collectAll()">💰 Collect All</button>
+
 <!-- Mobile touch controls (shown only on touch devices) -->
 <div id="joystick"><div id="joythumb"></div></div>
 <button id="sprintBtn" class="mbtn" title="Sprint">⚡</button>
@@ -193,7 +198,6 @@ const keys = {};
 let S = {                 // my economy (client-authoritative, synced up)
   money:0, tokens:0, prestige:0, level:1, xp:0, genSlots:6, multi:1, gens:[]
 };
-let drops = [];           // {x,y,value,born}
 let leaders = [];
 let chatMsgs = [];
 
@@ -231,6 +235,7 @@ function onMsg(m){
     MYID = m.id; WORLD = m.world; myPlotRect = m.plotRect; myPlotIndex = m.you.plot;
     Object.assign(S, m.you.stats);
     if(!S.genSlots) S.genSlots=6; if(!S.multi) S.multi=1; if(!S.gens) S.gens=[];
+    S.gens.forEach(g=>{ g.stored=0; });   // accumulation starts fresh each session
     me.x = WORLD.hub.x; me.y = WORLD.hub.y + 140;
     document.getElementById('login').style.display='none';
     updateHUD();
@@ -312,6 +317,38 @@ function buyGenCost(){ return Math.floor(50 * Math.pow(1.45, S.gens.length)); }
 function prestigeReq(){ return Math.floor(1e6 * Math.pow(S.prestige+1, 2.2)); }
 function xpNeeded(lvl){ return Math.floor(80 * Math.pow(lvl, 1.55)); }
 
+// --- rarity flavour per tier (like the reference: Common … Godly) ---
+const RARITIES = [
+  {name:'Common',color:'#9ca3af'}, {name:'Uncommon',color:'#4ade80'}, {name:'Rare',color:'#60a5fa'},
+  {name:'Epic',color:'#cd8cff'}, {name:'Legendary',color:'#ffd700'}, {name:'Mythic',color:'#f87171'}, {name:'Godly',color:'#22d3ee'}
+];
+function rarityOf(tier){
+  if(tier>=29)return RARITIES[6]; if(tier>=25)return RARITIES[5]; if(tier>=20)return RARITIES[4];
+  if(tier>=15)return RARITIES[3]; if(tier>=10)return RARITIES[2]; if(tier>=5)return RARITIES[1]; return RARITIES[0];
+}
+function genRate(tier){ const t=TIERS[tier]||TIERS[0]; return t.val*1000/t.int; }            // $/sec
+function genCap(tier){ return Math.max(genRate(tier)*150, (TIERS[tier]||TIERS[0]).val*25); }  // storage cap
+
+// --- floating "+$X" popups for juice ---
+let floaters = [];
+function popText(text, wx, wy, color){ floaters.push({text, x:wx, y:wy, born:performance.now(), color:color||'#4ade80'}); if(floaters.length>40) floaters.shift(); }
+
+function collectGen(i){
+  const g=S.gens[i]; if(!g || (g.stored||0) < 1) return;
+  const amt=Math.floor(g.stored*S.multi);
+  S.money+=amt; gainXP(Math.max(1, Math.floor(g.stored/3)));
+  if(myPlotRect){ const sp=slotPos(myPlotRect,g.slot); popText('+$'+fmt(amt), sp.x, sp.y-40, '#4ade80'); }
+  g.stored=0; updateHUD();
+}
+function collectAll(){
+  let total=0;
+  for(const g of S.gens){ if((g.stored||0)>0){ total+=g.stored; g.stored=0; } }
+  if(total<1){ toast('Nothing to collect yet','red'); return; }
+  const amt=Math.floor(total*S.multi);
+  S.money+=amt; gainXP(Math.max(1, Math.floor(total/3)));
+  updateHUD(); toast('Collected +$'+fmt(amt)+'!','green');
+}
+
 function buyGenerator(){
   if(S.gens.length >= S.genSlots){ toast('No free gen slots! Prestige or buy slots.','red'); return; }
   const cost=buyGenCost();
@@ -319,7 +356,7 @@ function buyGenerator(){
   S.money-=cost;
   const used=S.gens.map(g=>g.slot);
   let slot=0; while(used.includes(slot)) slot++;
-  S.gens.push({ tier:0, slot });
+  S.gens.push({ tier:0, slot, stored:0 });
   updateHUD(); openShop('gens'); syncUp();
   toast('Bought a '+TIERS[0].name+'!','green');
 }
@@ -336,7 +373,7 @@ function doPrestige(){
   const req=prestigeReq();
   if(S.money<req){ toast('Need $'+fmt(req)+' to prestige!','red'); return; }
   S.prestige++; S.multi=Math.round((S.multi+0.1)*10)/10; S.genSlots+=2;
-  S.money=0; S.gens=[]; drops=[];
+  S.money=0; S.gens=[]; floaters=[];
   updateHUD(); closeModal(); syncUp();
   toast('PRESTIGE '+S.prestige+'! +0.1x multi, +2 gen slots','gold');
 }
@@ -452,20 +489,23 @@ document.getElementById('chatInput').addEventListener('keydown',e=>{
     e.target.value=''; e.target.blur();
   } else if(e.key==='Escape'){ e.target.blur(); }
 });
-// click a gen on my plot to upgrade
+// tap a gen's collect button to collect, or the gen itself to upgrade
 cv.addEventListener('click',e=>{
-  if(openModalId) return;
+  if(openModalId || !myPlotRect) return;
   const wx=me.x+(e.clientX-W/2), wy=me.y+(e.clientY-H/2);
-  if(myPlotRect && wx>myPlotRect.x && wx<myPlotRect.x+myPlotRect.w && wy>myPlotRect.y && wy<myPlotRect.y+myPlotRect.h){
-    for(let i=0;i<S.gens.length;i++){
-      const sp=slotPos(myPlotRect,S.gens[i].slot);
-      if(Math.abs(wx-sp.x)<55 && Math.abs(wy-sp.y)<55){ upgradeGen(i); return; }
-    }
+  for(let i=0;i<S.gens.length;i++){
+    const sp=slotPos(myPlotRect,S.gens[i].slot);
+    // collect button (sits flat in front of the gen)
+    if(Math.abs(wx-sp.x)<62 && wy>sp.y+18 && wy<sp.y+50){ collectGen(i); return; }
+    // gen cube (drawn raised) → upgrade
+    if(Math.abs(wx-sp.x)<36 && wy>sp.y-70 && wy<sp.y+18){ upgradeGen(i); return; }
   }
 });
 
 /* ---- Mobile touch controls ---- */
-const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+// Touch-PRIMARY device only (phones/tablets). PCs — even ones that report
+// touch points — have a fine/hover pointer, so the joystick stays hidden there.
+const IS_TOUCH = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
 if(IS_TOUCH) document.body.classList.add('touch');
 const joy = { active:false, dx:0, dy:0 };
 let mobileSprint = false;
@@ -520,27 +560,13 @@ function loop(now){
   if(nearPad && !openModalId){ hint.innerHTML=(IS_TOUCH?'Tap to open':'Press <b>E</b>')+' · '+nearPad.name; hint.classList.add('show'); }
   else hint.classList.remove('show');
 
-  // generators produce (only mine, on my plot)
-  if(myPlotRect){
-    for(const g of S.gens){
-      const t=TIERS[g.tier];
-      g._next=g._next||now+Math.random()*t.int;
-      if(now>=g._next){
-        g._next=now+t.int;
-        const sp=slotPos(myPlotRect,g.slot);
-        if(drops.length<120) drops.push({ x:sp.x+(Math.random()-.5)*30, y:sp.y+(Math.random()-.5)*30, value:t.val, born:now, vy:-2 });
-      }
-    }
+  // generators accumulate cash into their own storage (you tap the button to collect)
+  for(const g of S.gens){
+    const cap=genCap(g.tier);
+    g.stored=Math.min(cap, (g.stored||0) + genRate(g.tier)*dt/1000);
   }
-  // collect drops near me
-  for(let i=drops.length-1;i>=0;i--){
-    const d=drops[i];
-    if(!d.settled){ d.y+=d.vy; d.vy+=0.25; if(d.vy>0){ d.settled=true; } }
-    if(Math.hypot(d.x-me.x, d.y-me.y)<70){
-      S.money+=d.value*S.multi; gainXP(Math.max(1,Math.floor(d.value/4)));
-      drops.splice(i,1); updateHUD();
-    } else if(now-d.born>30000){ drops.splice(i,1); }
-  }
+  // floating "+$" popups rise & fade out
+  for(let i=floaters.length-1;i>=0;i--){ if(now-floaters[i].born>1100) floaters.splice(i,1); }
   // interpolate others
   for(const id in others){ const o=others[id]; o.rx+=(o.x-o.rx)*0.2; o.ry+=(o.y-o.ry)*0.2; }
 
@@ -560,37 +586,42 @@ function render(){
   for(let x=-camX%g;x<W;x+=g){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke(); }
   for(let y=-camY%g;y<H;y+=g){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
 
-  // plots (draw a window around camera)
+  // plots — raised 3D slabs
   const totalPlots=WORLD.plotCols*8;
+  const TH=16;
   for(let i=0;i<totalPlots;i++){
     const r=plotRectOf(i); const sx=r.x-camX, sy=r.y-camY;
-    if(sx>W||sy>H||sx+r.w<0||sy+r.h<0) continue;
+    if(sx>W||sy>H+TH||sx+r.w<0||sy+r.h<0) continue;
     const mine=(i===myPlotIndex);
-    ctx.fillStyle=mine?'rgba(164,99,214,.10)':'rgba(255,255,255,.025)';
+    ctx.fillStyle=mine?'rgba(74,42,108,.95)':'rgba(24,24,34,.95)';   // front edge (thickness)
+    ctx.fillRect(sx, sy+r.h, r.w, TH);
+    ctx.fillStyle=mine?'rgba(58,38,86,.6)':'rgba(32,32,46,.55)';      // top surface
     ctx.fillRect(sx,sy,r.w,r.h);
-    ctx.strokeStyle=mine?'rgba(205,140,255,.7)':'rgba(255,255,255,.10)';
+    ctx.strokeStyle=mine?'rgba(205,140,255,.85)':'rgba(255,255,255,.12)';
     ctx.lineWidth=mine?3:1.5; ctx.strokeRect(sx,sy,r.w,r.h);
-    ctx.fillStyle=mine?'#cd8cff':'rgba(255,255,255,.25)';
+    ctx.fillStyle=mine?'#cd8cff':'rgba(255,255,255,.3)';
     ctx.font='bold 14px Space Grotesk, sans-serif'; ctx.textAlign='left';
     ctx.fillText(mine?'YOUR PLOT':'Plot #'+(i+1), sx+12, sy+22);
   }
 
-  // others' generators on their plots
+  // others' generators
   for(const id in others){
     const o=others[id]; if(o.plot==null) continue;
     const r=plotRectOf(o.plot);
-    for(const gg of (o.gens||[])) drawGen(r, gg, camX, camY, true);
+    for(const gg of (o.gens||[])) drawGen(r, gg, camX, camY, true, false);
   }
-  // my generators
-  if(myPlotRect) for(const gg of S.gens) drawGen(myPlotRect, gg, camX, camY, false);
+  // my generators (with collect buttons)
+  if(myPlotRect) for(let i=0;i<S.gens.length;i++) drawGen(myPlotRect, S.gens[i], camX, camY, false, true);
 
-  // drops
-  for(const d of drops){
-    const x=d.x-camX, y=d.y-camY;
-    ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x,y+9,9,3,0,0,7); ctx.fill();
-    ctx.fillStyle='#4ade80'; ctx.strokeStyle='#fff'; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(x,y,8,0,7); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#062'; ctx.font='bold 9px Inter'; ctx.textAlign='center'; ctx.fillText('$',x,y+3);
+  // floating +$ popups
+  const nowF=performance.now();
+  for(const f of floaters){
+    const a=1-(nowF-f.born)/1100, rise=(nowF-f.born)*0.045;
+    ctx.globalAlpha=Math.max(0,a);
+    ctx.fillStyle=f.color; ctx.font='bold 16px Space Grotesk, sans-serif'; ctx.textAlign='center';
+    ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,.5)';
+    ctx.strokeText(f.text, f.x-camX, f.y-camY-rise); ctx.fillText(f.text, f.x-camX, f.y-camY-rise);
+    ctx.globalAlpha=1;
   }
 
   // hub
@@ -615,31 +646,60 @@ function render(){
   drawPlayer(me.x-camX, me.y-camY, MYNAME+' · P'+S.prestige, '#a463d6', true);
 }
 
-function drawGen(rect, g, camX, camY, dim){
-  const sp=slotPos(rect,g.slot); const t=TIERS[g.tier]||TIERS[0];
-  const x=sp.x-camX, y=sp.y-camY; const sz=58;
-  if(x<-80||x>W+80||y<-80||y>H+80) return;
-  ctx.globalAlpha=dim?0.55:1;
-  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(x,y+sz/2,sz/2,sz/6,0,0,7); ctx.fill();
-  ctx.fillStyle=t.color; ctx.beginPath(); ctx.roundRect(x-sz/2,y-sz/2,sz,sz,8); ctx.fill();
-  const grd=ctx.createLinearGradient(x,y-sz/2,x,y+sz/2); grd.addColorStop(0,'rgba(255,255,255,.28)'); grd.addColorStop(1,'rgba(0,0,0,.32)');
-  ctx.fillStyle=grd; ctx.beginPath(); ctx.roundRect(x-sz/2,y-sz/2,sz,sz,8); ctx.fill();
+// ---- 2.5D drawing helpers ----
+function poly(pts){ ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]); ctx.closePath(); ctx.fill(); }
+function isoCube(gx,gy,s,d,H,color){
+  const E=[gx+s,gy],Sp=[gx,gy+d],Wp=[gx-s,gy];
+  const Nt=[gx,gy-d-H],Et=[gx+s,gy-H],St=[gx,gy+d-H],Wt=[gx-s,gy-H];
+  ctx.fillStyle=color; poly([Wp,Sp,St,Wt]); ctx.fillStyle='rgba(0,0,0,.40)'; poly([Wp,Sp,St,Wt]);   // left face (dark)
+  ctx.fillStyle=color; poly([Sp,E,Et,St]);  ctx.fillStyle='rgba(0,0,0,.20)'; poly([Sp,E,Et,St]);    // right face (mid)
+  ctx.fillStyle=color; poly([Nt,Et,St,Wt]); ctx.fillStyle='rgba(255,255,255,.16)'; poly([Nt,Et,St,Wt]); // top (light)
+}
+
+function drawGen(rect, g, camX, camY, dim, isMine){
+  const sp=slotPos(rect,g.slot); const t=TIERS[g.tier]||TIERS[0]; const rar=rarityOf(g.tier);
+  const gx=sp.x-camX, gy=sp.y-camY;
+  if(gx<-120||gx>W+120||gy<-180||gy>H+160) return;
+  const s=30, d=15, H=44;
+  ctx.globalAlpha=dim?0.6:1;
+  ctx.fillStyle='rgba(0,0,0,.32)'; ctx.beginPath(); ctx.ellipse(gx,gy,s,d*0.85,0,0,7); ctx.fill();  // shadow
+  isoCube(gx,gy,s,d,H,t.color);
   ctx.globalAlpha=1;
+  if(!dim){
+    // rarity + production rate above the gen
+    ctx.textAlign='center';
+    ctx.font='bold 11px Space Grotesk, sans-serif'; ctx.fillStyle=rar.color;
+    ctx.fillText(rar.name.toUpperCase(), gx, gy-H-24);
+    ctx.font='bold 12px Space Grotesk, sans-serif'; ctx.fillStyle='#fff';
+    ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,.5)';
+    ctx.strokeText('$'+fmt(genRate(g.tier))+'/s', gx, gy-H-9); ctx.fillText('$'+fmt(genRate(g.tier))+'/s', gx, gy-H-9);
+  }
+  // collect button — flat on the ground in front of the gen (mine only)
+  if(isMine){
+    const stored=Math.floor(g.stored||0);
+    const txt = stored>=1 ? ('$'+fmt(stored)) : 'Collect';
+    ctx.font='bold 13px Space Grotesk, sans-serif';
+    const bw=Math.max(78, ctx.measureText(txt).width+30), bh=26, by=gy+34;
+    const full=(g.stored||0) >= genCap(g.tier)-0.5;
+    ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.roundRect(gx-bw/2,by-bh/2+3,bw,bh,13); ctx.fill();
+    ctx.fillStyle = stored>=1 ? (full?'#ffd700':'#4ade80') : '#262630';
+    ctx.beginPath(); ctx.roundRect(gx-bw/2,by-bh/2,bw,bh,13); ctx.fill();
+    ctx.fillStyle = stored>=1 ? '#06320f' : '#6a6a7a';
+    ctx.textAlign='center'; ctx.fillText(txt, gx, by+4);
+  }
 }
 
 function drawPlayer(x,y,label,color,isMe){
-  // shadow
-  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(x,y+16,15,5,0,0,7); ctx.fill();
-  // body
-  ctx.fillStyle=color; ctx.beginPath(); ctx.roundRect(x-14,y-16,28,30,7); ctx.fill();
-  // eyes
-  ctx.fillStyle='#fff'; ctx.fillRect(x-7,y-7,5,7); ctx.fillRect(x+2,y-7,5,7);
-  ctx.fillStyle='#12121a'; ctx.fillRect(x-5,y-4,3,4); ctx.fillRect(x+4,y-4,3,4);
-  // name
+  const H=26;
+  ctx.fillStyle='rgba(0,0,0,.32)'; ctx.beginPath(); ctx.ellipse(x,y,15,6,0,0,7); ctx.fill();   // feet shadow
+  ctx.fillStyle=color; ctx.beginPath(); ctx.roundRect(x-14,y-H-16,28,30,8); ctx.fill();          // body, raised
+  ctx.fillStyle='rgba(0,0,0,.22)'; ctx.beginPath(); ctx.roundRect(x-14,y-H,28,14,8); ctx.fill();  // lower shade
+  ctx.fillStyle='#fff'; ctx.fillRect(x-7,y-H-7,5,7); ctx.fillRect(x+2,y-H-7,5,7);                  // eyes
+  ctx.fillStyle='#12121a'; ctx.fillRect(x-5,y-H-4,3,4); ctx.fillRect(x+4,y-H-4,3,4);
   ctx.font='bold 12px Inter'; ctx.textAlign='center';
   const tw=ctx.measureText(label).width;
-  ctx.fillStyle='rgba(10,10,15,.65)'; ctx.beginPath(); ctx.roundRect(x-tw/2-6,y-40,tw+12,18,6); ctx.fill();
-  ctx.fillStyle=isMe?'#cd8cff':'#e8e8f0'; ctx.fillText(label, x, y-27);
+  ctx.fillStyle='rgba(10,10,15,.7)'; ctx.beginPath(); ctx.roundRect(x-tw/2-6,y-H-44,tw+12,18,6); ctx.fill();
+  ctx.fillStyle=isMe?'#cd8cff':'#e8e8f0'; ctx.fillText(label, x, y-H-31);
 }
 
 document.getElementById('nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('passInput').focus(); });
