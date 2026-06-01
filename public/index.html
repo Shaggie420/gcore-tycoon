@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GCore Web Tycoon</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--s1:#12121a;--s2:#1a1a26;--border:rgba(255,255,255,.08);--purple:#a463d6;--pl:#cd8cff;--green:#4ade80;--gold:#ffd700;--red:#f87171;--text:#f0f0f5;--t2:#8a8a9a;--t3:#5a5a6a}
+html,body{height:100%;overflow:hidden;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);user-select:none}
+canvas{display:block;position:fixed;inset:0}
+
+/* LOGIN */
+#login{position:fixed;inset:0;z-index:50;background:radial-gradient(circle at 50% 30%,#1a1030,#0a0a0f);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+#login h1{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:2.6rem;background:linear-gradient(135deg,var(--pl),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#login p{color:var(--t3);font-size:.9rem;margin-top:-10px}
+#login input{width:320px;padding:14px 18px;background:var(--s2);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:1rem;outline:none;text-align:center}
+#login input:focus{border-color:var(--purple)}
+#login button{width:320px;padding:14px;background:var(--purple);border:none;border-radius:12px;color:#fff;font-weight:700;font-size:1rem;cursor:pointer}
+#login button:hover{background:#7b3fad}
+
+/* HUD */
+.hud{position:fixed;top:12px;left:12px;z-index:10;display:flex;gap:10px;flex-wrap:wrap;max-width:70vw}
+.stat{background:rgba(18,18,26,.9);border:1px solid var(--border);border-radius:10px;padding:8px 14px;backdrop-filter:blur(8px)}
+.stat .v{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.05rem;line-height:1}
+.stat .l{font-size:.6rem;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-top:3px}
+.v-money{color:var(--green)}.v-tok{color:var(--gold)}.v-pres{color:var(--pl)}.v-lvl{color:#60a5fa}.v-multi{color:#22d3ee}
+
+.topright{position:fixed;top:12px;right:12px;z-index:10;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.btn{background:var(--purple);border:none;color:#fff;padding:9px 16px;border-radius:9px;font-weight:600;font-size:.85rem;cursor:pointer;font-family:inherit}
+.btn:hover{background:#7b3fad}
+.btn.ghost{background:rgba(18,18,26,.9);border:1px solid var(--border);color:var(--t2)}
+.btn.ghost:hover{color:var(--text)}
+
+/* LEADERBOARD */
+.lb{position:fixed;top:64px;right:12px;z-index:10;width:210px;background:rgba(18,18,26,.92);border:1px solid var(--border);border-radius:12px;padding:12px;backdrop-filter:blur(8px)}
+.lb h3{font-family:'Space Grotesk',sans-serif;font-size:.8rem;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.lb .row{display:flex;justify-content:space-between;font-size:.78rem;padding:3px 0;color:var(--t2)}
+.lb .row b{color:var(--text)}
+.lb .row .p{color:var(--pl);font-weight:700}
+
+/* HINT */
+.hint{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(18,18,26,.92);border:1px solid rgba(164,99,214,.4);border-radius:100px;padding:8px 20px;font-size:.85rem;color:var(--pl);display:none}
+.hint.show{display:block}
+.hint b{color:#fff;background:var(--purple);padding:1px 7px;border-radius:5px}
+
+/* CHAT */
+.chat{position:fixed;bottom:12px;left:12px;z-index:10;width:340px}
+.chatlog{max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;margin-bottom:6px;mask-image:linear-gradient(to top,#000 70%,transparent)}
+.chatlog .m{font-size:.8rem;background:rgba(10,10,15,.5);padding:2px 8px;border-radius:6px;width:fit-content;max-width:100%}
+.chatlog .m .n{color:var(--pl);font-weight:600}
+.chatlog .m.sys{color:var(--t3);font-style:italic}
+.chat input{width:100%;padding:8px 12px;background:rgba(18,18,26,.92);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:.85rem;outline:none}
+.chat input:focus{border-color:var(--purple)}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center}
+.modal-bg.show{display:flex}
+.modal{background:var(--s1);border:1px solid var(--border);border-radius:16px;width:560px;max-width:92vw;max-height:84vh;overflow-y:auto;padding:24px}
+.modal h2{font-family:'Space Grotesk',sans-serif;font-size:1.3rem;margin-bottom:4px}
+.modal .sub{color:var(--t3);font-size:.85rem;margin-bottom:18px}
+.modal .x{float:right;cursor:pointer;color:var(--t3);font-size:1.4rem;line-height:1}
+.modal .x:hover{color:var(--red)}
+.shopitem{display:flex;align-items:center;gap:14px;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:10px}
+.shopitem .ico{width:42px;height:42px;border-radius:9px;flex-shrink:0}
+.shopitem .info{flex:1}
+.shopitem .info .nm{font-weight:700;font-size:.95rem}
+.shopitem .info .ds{font-size:.78rem;color:var(--t3)}
+.shopitem .buy{padding:9px 16px;border:none;border-radius:9px;font-weight:700;font-size:.82rem;cursor:pointer;background:var(--green);color:#062;white-space:nowrap;font-family:inherit}
+.shopitem .buy:hover{background:#22c55e}
+.shopitem .buy:disabled{opacity:.4;cursor:not-allowed}
+.shopitem .buy.gold{background:var(--gold);color:#5a4500}
+.shopitem .buy.purple{background:var(--purple);color:#fff}
+
+/* TOAST */
+.toast{position:fixed;bottom:200px;left:50%;transform:translateX(-50%) translateY(20px);z-index:40;background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:10px 20px;font-size:.85rem;opacity:0;transition:all .3s;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.gold{border-color:rgba(255,215,0,.4);color:var(--gold)}
+.toast.green{border-color:rgba(74,222,128,.4);color:var(--green)}
+.toast.red{border-color:rgba(248,113,113,.4);color:var(--red)}
+
+.controls{position:fixed;bottom:12px;right:12px;z-index:10;font-size:.72rem;color:var(--t3);text-align:right;line-height:1.5}
+.controls b{color:var(--t2)}
+</style>
+</head>
+<body>
+
+<div id="login">
+    <h1>GCORE TYCOON</h1>
+    <p>Build your empire — online with everyone</p>
+    <input id="nameInput" placeholder="Enter your name" maxlength="16" autocomplete="off">
+    <button onclick="doJoin()">Play</button>
+</div>
+
+<canvas id="game"></canvas>
+
+<div class="hud">
+    <div class="stat"><div class="v v-money" id="hMoney">$0</div><div class="l">Balance</div></div>
+    <div class="stat"><div class="v v-tok" id="hTok">0</div><div class="l">Tokens</div></div>
+    <div class="stat"><div class="v v-pres" id="hPres">0</div><div class="l">Prestige</div></div>
+    <div class="stat"><div class="v v-lvl" id="hLvl">1</div><div class="l">Level</div></div>
+    <div class="stat"><div class="v v-multi" id="hMulti">1.0x</div><div class="l">Multiplier</div></div>
+    <div class="stat"><div class="v" id="hGens" style="color:var(--text)">0/6</div><div class="l">Generators</div></div>
+</div>
+
+<div class="topright">
+    <button class="btn" onclick="goPlot()">⌖ My Plot</button>
+    <button class="btn ghost" onclick="goHub()">⌂ Spawn</button>
+    <a class="btn ghost" href="index.html" onclick="return confirm('Leave the game?')" style="text-decoration:none">Exit</a>
+</div>
+
+<div class="lb">
+    <h3>🏆 Top Tycoons</h3>
+    <div id="lbBody"><div class="row"><span style="color:var(--t3)">Loading…</span></div></div>
+</div>
+
+<div class="hint" id="hint"></div>
+
+<div class="chat">
+    <div class="chatlog" id="chatlog"></div>
+    <input id="chatInput" placeholder="Press Enter to chat…" maxlength="200">
+</div>
+
+<div class="controls"><b>WASD</b> move · <b>E</b> interact · <b>Enter</b> chat</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- SHOP MODAL -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modal"></div>
+</div>
+
+<script>
+/* ============================================================
+   GENERATOR TIERS (mirrors the GCore server progression)
+   ============================================================ */
+const TIERS = [
+  { name:'Carbon Gen',  val:5,        int:2400, color:'#6b7280', up:140 },
+  { name:'Scrap Gen',   val:24,       int:2200, color:'#9ca3af', up:800 },
+  { name:'Wire Gen',    val:110,      int:2000, color:'#cd8cff', up:4200 },
+  { name:'Bullion Gen', val:480,      int:1800, color:'#ffd700', up:22000 },
+  { name:'Mana Gen',    val:2100,     int:1600, color:'#4ade80', up:120000 },
+  { name:'Flux Gen',    val:9500,     int:1400, color:'#22d3ee', up:650000 },
+  { name:'Jade Gen',    val:44000,    int:1200, color:'#00ffaa', up:3200000 },
+  { name:'Reactor Gen', val:210000,   int:1000, color:'#ff5555', up:1.7e7 },
+  { name:'Silica Gen',  val:1050000,  int:820,  color:'#ff00ee', up:9e7 },
+  { name:'Amber Gen',   val:5200000,  int:650,  color:'#ffaa00', up:0 }
+];
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let WS, MYID = 0, MYNAME = '';
+let WORLD = { w:4200, h:3400, hub:{x:2100,y:420,w:1200,h:620}, plotCols:6, plotW:620, plotH:560, plotGap:60, plotTop:1150 };
+let myPlotRect = null, myPlotIndex = 0;
+let me = { x:2100, y:540, dir:0 };
+let others = {};          // id -> {name,x,y,dir,plot,prestige,gens, rx,ry}
+const keys = {};
+
+let S = {                 // my economy (client-authoritative, synced up)
+  money:0, tokens:0, prestige:0, level:1, xp:0, genSlots:6, multi:1, gens:[]
+};
+let drops = [];           // {x,y,value,born}
+let leaders = [];
+let chatMsgs = [];
+
+const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+let W,H; function resize(){ W=cv.width=innerWidth; H=cv.height=innerHeight; } addEventListener('resize',resize); resize();
+
+/* ============================================================
+   NETWORK
+   ============================================================ */
+function doJoin(){
+  const n = document.getElementById('nameInput').value.trim().replace(/[^a-zA-Z0-9_]/g,'');
+  if(n.length<2){ document.getElementById('nameInput').style.borderColor='var(--red)'; return; }
+  MYNAME = n;
+  const proto = location.protocol==='https:'?'wss':'ws';
+  WS = new WebSocket(proto+'://'+location.host);
+  WS.onopen = () => WS.send(JSON.stringify({t:'join', name:n}));
+  WS.onmessage = (e) => onMsg(JSON.parse(e.data));
+  WS.onclose = () => toast('Disconnected from server','red');
+}
+
+function onMsg(m){
+  if(m.t==='init'){
+    MYID = m.id; WORLD = m.world; myPlotRect = m.plotRect; myPlotIndex = m.you.plot;
+    Object.assign(S, m.you.stats);
+    if(!S.genSlots) S.genSlots=6; if(!S.multi) S.multi=1; if(!S.gens) S.gens=[];
+    me.x = WORLD.hub.x; me.y = WORLD.hub.y + 140;
+    document.getElementById('login').style.display='none';
+    updateHUD();
+    if(!started){ started=true; requestAnimationFrame(loop); }
+  } else if(m.t==='players'){
+    const seen = {};
+    for(const p of m.list){
+      seen[p.id]=1;
+      if(p.id===MYID) continue;
+      if(!others[p.id]) others[p.id] = {rx:p.x, ry:p.y};
+      const o = others[p.id];
+      o.name=p.name; o.x=p.x; o.y=p.y; o.dir=p.dir; o.plot=p.plot; o.prestige=p.prestige; o.gens=p.gens||[];
+    }
+    for(const id in others) if(!seen[id]) delete others[id];
+  } else if(m.t==='leave'){
+    delete others[m.id];
+  } else if(m.t==='leaderboard'){
+    leaders = m.list; renderLB();
+  } else if(m.t==='chat'){
+    chatMsgs.push(m); if(chatMsgs.length>40) chatMsgs.shift(); renderChat();
+  }
+}
+
+function syncUp(){
+  if(WS && WS.readyState===1){
+    WS.send(JSON.stringify({t:'sync', stats:S}));
+  }
+}
+setInterval(syncUp, 2000);
+
+let lastMoveSent=0;
+function sendMove(){
+  const now=performance.now();
+  if(now-lastMoveSent<70) return;
+  lastMoveSent=now;
+  if(WS && WS.readyState===1) WS.send(JSON.stringify({t:'move', x:Math.round(me.x), y:Math.round(me.y), dir:me.dir}));
+}
+
+/* ============================================================
+   PLOT GEOMETRY
+   ============================================================ */
+function plotRectOf(index){
+  const col=index%WORLD.plotCols, row=Math.floor(index/WORLD.plotCols);
+  const totalW=WORLD.plotCols*WORLD.plotW+(WORLD.plotCols-1)*WORLD.plotGap;
+  const startX=(WORLD.w-totalW)/2;
+  return { x:startX+col*(WORLD.plotW+WORLD.plotGap), y:WORLD.plotTop+row*(WORLD.plotH+WORLD.plotGap), w:WORLD.plotW, h:WORLD.plotH };
+}
+// gen slot position within a plot (4x4 grid)
+function slotPos(rect, slot){
+  const cols=4, cw=rect.w/cols, ch=rect.h/4;
+  const c=slot%cols, r=Math.floor(slot/cols);
+  return { x:rect.x+c*cw+cw/2, y:rect.y+r*ch+ch/2, cw, ch };
+}
+
+/* ============================================================
+   SHOP PADS (in the hub)
+   ============================================================ */
+function pads(){
+  const h=WORLD.hub;
+  return [
+    { id:'gens',  name:'Generator Shop', x:h.x-360, y:h.y, color:'#a463d6', icon:'⚙' },
+    { id:'token', name:'Token Shop',     x:h.x,     y:h.y, color:'#ffd700', icon:'⛃' },
+    { id:'pres',  name:'Prestige',       x:h.x+360, y:h.y, color:'#cd8cff', icon:'★' }
+  ];
+}
+
+/* ============================================================
+   ECONOMY
+   ============================================================ */
+function fmt(n){ n=Math.floor(n);
+  if(n>=1e15)return (n/1e15).toFixed(2)+'Q';
+  if(n>=1e12)return (n/1e12).toFixed(2)+'T';
+  if(n>=1e9)return (n/1e9).toFixed(2)+'B';
+  if(n>=1e6)return (n/1e6).toFixed(2)+'M';
+  if(n>=1e3)return (n/1e3).toFixed(1)+'K';
+  return ''+n;
+}
+function buyGenCost(){ return Math.floor(50 * Math.pow(1.45, S.gens.length)); }
+function prestigeReq(){ return Math.floor(1e6 * Math.pow(S.prestige+1, 2.2)); }
+function xpNeeded(lvl){ return Math.floor(80 * Math.pow(lvl, 1.55)); }
+
+function buyGenerator(){
+  if(S.gens.length >= S.genSlots){ toast('No free gen slots! Prestige or buy slots.','red'); return; }
+  const cost=buyGenCost();
+  if(S.money<cost){ toast('Not enough money!','red'); return; }
+  S.money-=cost;
+  const used=S.gens.map(g=>g.slot);
+  let slot=0; while(used.includes(slot)) slot++;
+  S.gens.push({ tier:0, slot });
+  updateHUD(); openShop('gens'); syncUp();
+  toast('Bought a Carbon Gen!','green');
+}
+function upgradeGen(i){
+  const g=S.gens[i]; if(!g) return;
+  if(g.tier>=TIERS.length-1){ toast('Already max tier!','red'); return; }
+  const cost=TIERS[g.tier].up;
+  if(S.money<cost){ toast('Not enough money!','red'); return; }
+  S.money-=cost; g.tier++;
+  updateHUD(); openShop('gens'); syncUp();
+  toast('Upgraded to '+TIERS[g.tier].name+'!','green');
+}
+function doPrestige(){
+  const req=prestigeReq();
+  if(S.money<req){ toast('Need $'+fmt(req)+' to prestige!','red'); return; }
+  S.prestige++; S.multi=Math.round((S.multi+0.1)*10)/10; S.genSlots+=2;
+  S.money=0; S.gens=[]; drops=[];
+  updateHUD(); closeModal(); syncUp();
+  toast('PRESTIGE '+S.prestige+'! +0.1x multi, +2 gen slots','gold');
+}
+function buySlot(){
+  const cost=Math.floor(50*Math.pow(1.6, S.genSlots-6));
+  if(S.tokens<cost){ toast('Not enough tokens!','red'); return; }
+  S.tokens-=cost; S.genSlots++;
+  updateHUD(); openShop('token'); syncUp(); toast('+1 Gen Slot!','green');
+}
+function buyMulti(){
+  const cost=Math.floor(100*Math.pow(1.5, Math.round((S.multi-1)*10)));
+  if(S.tokens<cost){ toast('Not enough tokens!','red'); return; }
+  S.tokens-=cost; S.multi=Math.round((S.multi+0.05)*100)/100;
+  updateHUD(); openShop('token'); syncUp(); toast('+0.05x Multiplier!','green');
+}
+
+function gainXP(amt){
+  S.xp+=amt;
+  let need=xpNeeded(S.level);
+  while(S.xp>=need){
+    S.xp-=need; S.level++;
+    const tok=S.level*8;
+    S.tokens+=tok;
+    toast('Level '+S.level+'! +'+tok+' Tokens','gold');
+    need=xpNeeded(S.level);
+  }
+}
+
+/* ============================================================
+   UI
+   ============================================================ */
+function updateHUD(){
+  document.getElementById('hMoney').textContent='$'+fmt(S.money);
+  document.getElementById('hTok').textContent=fmt(S.tokens);
+  document.getElementById('hPres').textContent=S.prestige;
+  document.getElementById('hLvl').textContent=S.level;
+  document.getElementById('hMulti').textContent=(S.multi).toFixed(2)+'x';
+  document.getElementById('hGens').textContent=S.gens.length+'/'+S.genSlots;
+}
+function renderLB(){
+  const b=document.getElementById('lbBody');
+  if(!leaders.length){ b.innerHTML='<div class="row"><span style="color:var(--t3)">No one yet</span></div>'; return; }
+  b.innerHTML=leaders.map((l,i)=>'<div class="row"><span>'+(i+1)+'. <b>'+l.name+'</b></span><span class="p">P'+l.prestige+'</span></div>').join('');
+}
+function renderChat(){
+  const c=document.getElementById('chatlog');
+  c.innerHTML=chatMsgs.map(m=> m.sys
+    ? '<div class="m sys">'+esc(m.msg)+'</div>'
+    : '<div class="m"><span class="n">'+esc(m.name)+':</span> '+esc(m.msg)+'</div>').join('');
+  c.scrollTop=c.scrollHeight;
+}
+function esc(s){ return (''+s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+function toast(msg,cls=''){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show '+cls; clearTimeout(t._t); t._t=setTimeout(()=>t.className='toast',2200); }
+
+/* ---- Shop modals ---- */
+let openModalId=null;
+function closeModal(){ document.getElementById('modalBg').classList.remove('show'); openModalId=null; }
+function openShop(id){
+  openModalId=id;
+  const m=document.getElementById('modal');
+  if(id==='gens'){
+    let html='<span class="x" onclick="closeModal()">✕</span><h2>⚙ Generator Shop</h2><div class="sub">Buy generators, then upgrade them through 10 tiers.</div>';
+    const cost=buyGenCost();
+    html+='<div class="shopitem"><div class="ico" style="background:#6b7280"></div><div class="info"><div class="nm">Buy Generator</div><div class="ds">Places a Carbon Gen ('+S.gens.length+'/'+S.genSlots+' slots used)</div></div><button class="buy" '+(S.money<cost||S.gens.length>=S.genSlots?'disabled':'')+' onclick="buyGenerator()">$'+fmt(cost)+'</button></div>';
+    if(S.gens.length){
+      html+='<div class="sub" style="margin:14px 0 8px">Your generators (click to upgrade):</div>';
+      S.gens.forEach((g,i)=>{
+        const t=TIERS[g.tier], nx=TIERS[g.tier+1];
+        const upCost=t.up;
+        html+='<div class="shopitem"><div class="ico" style="background:'+t.color+'"></div><div class="info"><div class="nm">'+t.name+'</div><div class="ds">$'+fmt(t.val)+' / drop'+(nx?' → '+nx.name:' (MAX)')+'</div></div>'+
+          (nx?'<button class="buy" '+(S.money<upCost?'disabled':'')+' onclick="upgradeGen('+i+')">⬆ $'+fmt(upCost)+'</button>':'<button class="buy" disabled>MAX</button>')+'</div>';
+      });
+    }
+    m.innerHTML=html;
+  } else if(id==='token'){
+    const slotCost=Math.floor(50*Math.pow(1.6, S.genSlots-6));
+    const multiCost=Math.floor(100*Math.pow(1.5, Math.round((S.multi-1)*10)));
+    m.innerHTML='<span class="x" onclick="closeModal()">✕</span><h2>⛃ Token Shop</h2><div class="sub">Spend Tokens (earned by leveling) on permanent upgrades.</div>'+
+      '<div class="shopitem"><div class="ico" style="background:#22d3ee"></div><div class="info"><div class="nm">+1 Gen Slot</div><div class="ds">Currently '+S.genSlots+' slots</div></div><button class="buy gold" '+(S.tokens<slotCost?'disabled':'')+' onclick="buySlot()">⛃ '+fmt(slotCost)+'</button></div>'+
+      '<div class="shopitem"><div class="ico" style="background:#a463d6"></div><div class="info"><div class="nm">+0.05x Multiplier</div><div class="ds">Currently '+S.multi.toFixed(2)+'x sell multiplier</div></div><button class="buy gold" '+(S.tokens<multiCost?'disabled':'')+' onclick="buyMulti()">⛃ '+fmt(multiCost)+'</button></div>';
+  } else if(id==='pres'){
+    const req=prestigeReq();
+    m.innerHTML='<span class="x" onclick="closeModal()">✕</span><h2>★ Prestige</h2><div class="sub">Reset your money &amp; generators for permanent power.</div>'+
+      '<div class="shopitem"><div class="ico" style="background:#cd8cff"></div><div class="info"><div class="nm">Prestige '+(S.prestige+1)+'</div><div class="ds">Requires $'+fmt(req)+' · Reward: +0.1x Multiplier, +2 Gen Slots</div></div><button class="buy purple" '+(S.money<req?'disabled':'')+' onclick="doPrestige()">'+(S.money<req?'Need $'+fmt(req):'Prestige!')+'</button></div>'+
+      '<div class="sub" style="margin-top:10px">Your balance: $'+fmt(S.money)+'</div>';
+  }
+  document.getElementById('modalBg').classList.add('show');
+}
+function goPlot(){ if(myPlotRect){ me.x=myPlotRect.x+myPlotRect.w/2; me.y=myPlotRect.y+myPlotRect.h/2; } }
+function goHub(){ me.x=WORLD.hub.x; me.y=WORLD.hub.y+140; }
+
+/* ============================================================
+   INPUT
+   ============================================================ */
+addEventListener('keydown',e=>{
+  if(document.activeElement===document.getElementById('chatInput')) return;
+  keys[e.key.toLowerCase()]=1;
+  if(e.key.toLowerCase()==='e') tryInteract();
+  if(e.key==='Enter'){ document.getElementById('chatInput').focus(); }
+});
+addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
+document.getElementById('chatInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    const v=e.target.value.trim();
+    if(v && WS && WS.readyState===1) WS.send(JSON.stringify({t:'chat', msg:v}));
+    e.target.value=''; e.target.blur();
+  } else if(e.key==='Escape'){ e.target.blur(); }
+});
+// click a gen on my plot to upgrade
+cv.addEventListener('click',e=>{
+  if(openModalId) return;
+  const wx=me.x+(e.clientX-W/2), wy=me.y+(e.clientY-H/2);
+  if(myPlotRect && wx>myPlotRect.x && wx<myPlotRect.x+myPlotRect.w && wy>myPlotRect.y && wy<myPlotRect.y+myPlotRect.h){
+    for(let i=0;i<S.gens.length;i++){
+      const sp=slotPos(myPlotRect,S.gens[i].slot);
+      if(Math.abs(wx-sp.x)<55 && Math.abs(wy-sp.y)<55){ upgradeGen(i); return; }
+    }
+  }
+});
+
+let nearPad=null;
+function tryInteract(){ if(nearPad) openShop(nearPad.id); }
+
+/* ============================================================
+   GAME LOOP
+   ============================================================ */
+let started=false, lastT=performance.now();
+function loop(now){
+  const dt=Math.min(50, now-lastT); lastT=now;
+  // movement
+  let dx=0,dy=0;
+  if(keys['w']||keys['arrowup'])dy-=1;
+  if(keys['s']||keys['arrowdown'])dy+=1;
+  if(keys['a']||keys['arrowleft'])dx-=1;
+  if(keys['d']||keys['arrowright'])dx+=1;
+  if(dx||dy){ const l=Math.hypot(dx,dy); dx/=l;dy/=l; me.x+=dx*0.42*dt; me.y+=dy*0.42*dt; me.dir=dx; sendMove(); }
+  me.x=Math.max(20,Math.min(WORLD.w-20,me.x)); me.y=Math.max(20,Math.min(WORLD.h-20,me.y));
+
+  // near a shop pad?
+  nearPad=null;
+  for(const pad of pads()){ if(Math.hypot(me.x-pad.x, me.y-pad.y)<90){ nearPad=pad; break; } }
+  const hint=document.getElementById('hint');
+  if(nearPad && !openModalId){ hint.innerHTML='Press <b>E</b> · '+nearPad.name; hint.classList.add('show'); }
+  else hint.classList.remove('show');
+
+  // generators produce (only mine, on my plot)
+  if(myPlotRect){
+    for(const g of S.gens){
+      const t=TIERS[g.tier];
+      g._next=g._next||now+Math.random()*t.int;
+      if(now>=g._next){
+        g._next=now+t.int;
+        const sp=slotPos(myPlotRect,g.slot);
+        if(drops.length<120) drops.push({ x:sp.x+(Math.random()-.5)*30, y:sp.y+(Math.random()-.5)*30, value:t.val, born:now, vy:-2 });
+      }
+    }
+  }
+  // collect drops near me
+  for(let i=drops.length-1;i>=0;i--){
+    const d=drops[i];
+    if(!d.settled){ d.y+=d.vy; d.vy+=0.25; if(d.vy>0){ d.settled=true; } }
+    if(Math.hypot(d.x-me.x, d.y-me.y)<70){
+      S.money+=d.value*S.multi; gainXP(Math.max(1,Math.floor(d.value/4)));
+      drops.splice(i,1); updateHUD();
+    } else if(now-d.born>30000){ drops.splice(i,1); }
+  }
+  // interpolate others
+  for(const id in others){ const o=others[id]; o.rx+=(o.x-o.rx)*0.2; o.ry+=(o.y-o.ry)*0.2; }
+
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function render(){
+  const camX=me.x-W/2, camY=me.y-H/2;
+  ctx.fillStyle='#0b0b12'; ctx.fillRect(0,0,W,H);
+  // ground grid
+  ctx.strokeStyle='rgba(164,99,214,.05)'; ctx.lineWidth=1;
+  const g=80;
+  for(let x=-camX%g;x<W;x+=g){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke(); }
+  for(let y=-camY%g;y<H;y+=g){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
+
+  // plots (draw a window around camera)
+  const totalPlots=WORLD.plotCols*8;
+  for(let i=0;i<totalPlots;i++){
+    const r=plotRectOf(i); const sx=r.x-camX, sy=r.y-camY;
+    if(sx>W||sy>H||sx+r.w<0||sy+r.h<0) continue;
+    const mine=(i===myPlotIndex);
+    ctx.fillStyle=mine?'rgba(164,99,214,.10)':'rgba(255,255,255,.025)';
+    ctx.fillRect(sx,sy,r.w,r.h);
+    ctx.strokeStyle=mine?'rgba(205,140,255,.7)':'rgba(255,255,255,.10)';
+    ctx.lineWidth=mine?3:1.5; ctx.strokeRect(sx,sy,r.w,r.h);
+    ctx.fillStyle=mine?'#cd8cff':'rgba(255,255,255,.25)';
+    ctx.font='bold 14px Space Grotesk, sans-serif'; ctx.textAlign='left';
+    ctx.fillText(mine?'YOUR PLOT':'Plot #'+(i+1), sx+12, sy+22);
+  }
+
+  // others' generators on their plots
+  for(const id in others){
+    const o=others[id]; if(o.plot==null) continue;
+    const r=plotRectOf(o.plot);
+    for(const gg of (o.gens||[])) drawGen(r, gg, camX, camY, true);
+  }
+  // my generators
+  if(myPlotRect) for(const gg of S.gens) drawGen(myPlotRect, gg, camX, camY, false);
+
+  // drops
+  for(const d of drops){
+    const x=d.x-camX, y=d.y-camY;
+    ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x,y+9,9,3,0,0,7); ctx.fill();
+    ctx.fillStyle='#4ade80'; ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(x,y,8,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#062'; ctx.font='bold 9px Inter'; ctx.textAlign='center'; ctx.fillText('$',x,y+3);
+  }
+
+  // hub
+  const h=WORLD.hub, hx=h.x-h.w/2-camX, hy=h.y-h.h/2-camY;
+  ctx.fillStyle='rgba(164,99,214,.08)'; ctx.fillRect(hx,hy,h.w,h.h);
+  ctx.strokeStyle='rgba(205,140,255,.4)'; ctx.lineWidth=2; ctx.strokeRect(hx,hy,h.w,h.h);
+  ctx.fillStyle='#cd8cff'; ctx.font='bold 22px Space Grotesk, sans-serif'; ctx.textAlign='center';
+  ctx.fillText('✦ SPAWN ✦', h.x-camX, hy+34);
+  // shop pads
+  for(const pad of pads()){
+    const px=pad.x-camX, py=pad.y-camY;
+    ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(px,py+46,52,16,0,0,7); ctx.fill();
+    ctx.fillStyle=pad.color; ctx.beginPath(); ctx.roundRect(px-46,py-46,92,92,14); ctx.fill();
+    const grd=ctx.createLinearGradient(px,py-46,px,py+46); grd.addColorStop(0,'rgba(255,255,255,.3)'); grd.addColorStop(1,'rgba(0,0,0,.3)');
+    ctx.fillStyle=grd; ctx.beginPath(); ctx.roundRect(px-46,py-46,92,92,14); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='34px sans-serif'; ctx.fillText(pad.icon, px, py+12);
+    ctx.font='bold 12px Space Grotesk, sans-serif'; ctx.fillText(pad.name, px, py+72);
+  }
+
+  // players (others then me)
+  for(const id in others){ const o=others[id]; drawPlayer(o.rx-camX, o.ry-camY, o.name+' · P'+o.prestige, '#7b6fae', false); }
+  drawPlayer(me.x-camX, me.y-camY, MYNAME+' · P'+S.prestige, '#a463d6', true);
+}
+
+function drawGen(rect, g, camX, camY, dim){
+  const sp=slotPos(rect,g.slot); const t=TIERS[g.tier]||TIERS[0];
+  const x=sp.x-camX, y=sp.y-camY; const sz=58;
+  if(x<-80||x>W+80||y<-80||y>H+80) return;
+  ctx.globalAlpha=dim?0.55:1;
+  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(x,y+sz/2,sz/2,sz/6,0,0,7); ctx.fill();
+  ctx.fillStyle=t.color; ctx.beginPath(); ctx.roundRect(x-sz/2,y-sz/2,sz,sz,8); ctx.fill();
+  const grd=ctx.createLinearGradient(x,y-sz/2,x,y+sz/2); grd.addColorStop(0,'rgba(255,255,255,.28)'); grd.addColorStop(1,'rgba(0,0,0,.32)');
+  ctx.fillStyle=grd; ctx.beginPath(); ctx.roundRect(x-sz/2,y-sz/2,sz,sz,8); ctx.fill();
+  ctx.globalAlpha=1;
+}
+
+function drawPlayer(x,y,label,color,isMe){
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(x,y+16,15,5,0,0,7); ctx.fill();
+  // body
+  ctx.fillStyle=color; ctx.beginPath(); ctx.roundRect(x-14,y-16,28,30,7); ctx.fill();
+  // eyes
+  ctx.fillStyle='#fff'; ctx.fillRect(x-7,y-7,5,7); ctx.fillRect(x+2,y-7,5,7);
+  ctx.fillStyle='#12121a'; ctx.fillRect(x-5,y-4,3,4); ctx.fillRect(x+4,y-4,3,4);
+  // name
+  ctx.font='bold 12px Inter'; ctx.textAlign='center';
+  const tw=ctx.measureText(label).width;
+  ctx.fillStyle='rgba(10,10,15,.65)'; ctx.beginPath(); ctx.roundRect(x-tw/2-6,y-40,tw+12,18,6); ctx.fill();
+  ctx.fillStyle=isMe?'#cd8cff':'#e8e8f0'; ctx.fillText(label, x, y-27);
+}
+
+document.getElementById('nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doJoin(); });
+</script>
+</body>
+</html>

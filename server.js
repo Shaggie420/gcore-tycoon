@@ -1,0 +1,183 @@
+// ==========================================================
+//  GCORE WEB TYCOON — multiplayer game server
+//  - WebSocket presence/movement so everyone sees each other
+//  - Per-player persisted economy (money, tokens, prestige, gens)
+//  - Shared leaderboard + global chat
+//  Economy is simulated client-side for responsiveness and
+//  synced here so progress is saved and visible to others.
+// ==========================================================
+const express = require('express');
+const http = require('http');
+const path = require('path');
+const fs = require('fs');
+const { WebSocketServer } = require('ws');
+
+const app = express();
+app.use(express.static(path.join(__dirname, 'public')));
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
+
+const PORT = process.env.PORT || 3000;
+// DATA_DIR lets Render mount a persistent disk (e.g. /data) so saves survive redeploys.
+const DATA_DIR = process.env.DATA_DIR && fs.existsSync(process.env.DATA_DIR) ? process.env.DATA_DIR : __dirname;
+const SAVE_FILE = path.join(DATA_DIR, 'tycoondata.json');
+
+// ---- Persistent account store (keyed by lowercase name) ----
+let accounts = {};
+try { accounts = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf8')); } catch (e) { accounts = {}; }
+function saveAccounts() {
+  try { fs.writeFileSync(SAVE_FILE, JSON.stringify(accounts)); } catch (e) {}
+}
+setInterval(saveAccounts, 15000);
+
+// ---- Live players (this session) ----
+// id -> { ws, name, key, x, y, plot, dir, stats }
+let players = {};
+let nextId = 1;
+
+const WORLD_W = 4200, WORLD_H = 3400;
+const HUB = { x: WORLD_W / 2, y: 420, w: 1200, h: 620 };
+const PLOT_COLS = 6, PLOT_W = 620, PLOT_H = 560, PLOT_GAP = 60;
+const PLOT_TOP = 1150;
+
+function plotRect(index) {
+  const col = index % PLOT_COLS;
+  const row = Math.floor(index / PLOT_COLS);
+  const totalW = PLOT_COLS * PLOT_W + (PLOT_COLS - 1) * PLOT_GAP;
+  const startX = (WORLD_W - totalW) / 2;
+  return {
+    x: startX + col * (PLOT_W + PLOT_GAP),
+    y: PLOT_TOP + row * (PLOT_H + PLOT_GAP),
+    w: PLOT_W, h: PLOT_H
+  };
+}
+
+function blankStats() {
+  return {
+    money: 0, tokens: 0, prestige: 0, level: 1, xp: 0,
+    genSlots: 6, multi: 1,
+    gens: [] // [{tier, slot}]
+  };
+}
+
+function broadcast(obj, exceptId) {
+  const msg = JSON.stringify(obj);
+  for (const id in players) {
+    if (id == exceptId) continue;
+    const p = players[id];
+    if (p.ws.readyState === 1) p.ws.send(msg);
+  }
+}
+
+function leaderboard() {
+  return Object.values(accounts)
+    .map(a => ({ name: a.name, prestige: a.stats.prestige || 0, money: a.stats.money || 0 }))
+    .sort((a, b) => (b.prestige - a.prestige) || (b.money - a.money))
+    .slice(0, 10);
+}
+
+wss.on('connection', (ws) => {
+  const id = nextId++;
+  let player = null;
+
+  ws.on('message', (raw) => {
+    let m;
+    try { m = JSON.parse(raw); } catch (e) { return; }
+
+    if (m.t === 'join') {
+      const name = ('' + (m.name || 'Player')).slice(0, 16).replace(/[^a-zA-Z0-9_]/g, '') || 'Player';
+      const key = name.toLowerCase();
+      // Load or create the account
+      if (!accounts[key]) accounts[key] = { name, stats: blankStats(), plot: Object.keys(accounts).length };
+      const acc = accounts[key];
+      acc.name = name;
+      const spawn = { x: HUB.x, y: HUB.y + 120 };
+      player = {
+        ws, id, name, key,
+        x: spawn.x, y: spawn.y, dir: 0,
+        plot: acc.plot,
+        stats: acc.stats
+      };
+      players[id] = player;
+
+      // Tell the new player everything
+      ws.send(JSON.stringify({
+        t: 'init',
+        id,
+        you: { name, plot: acc.plot, stats: acc.stats },
+        world: { w: WORLD_W, h: WORLD_H, hub: HUB, plotCols: PLOT_COLS, plotW: PLOT_W, plotH: PLOT_H, plotGap: PLOT_GAP, plotTop: PLOT_TOP },
+        plotRect: plotRect(acc.plot)
+      }));
+      // Send current player list to the newcomer
+      ws.send(JSON.stringify({ t: 'players', list: snapshot() }));
+      ws.send(JSON.stringify({ t: 'leaderboard', list: leaderboard() }));
+      broadcast({ t: 'chat', name: 'SERVER', msg: `${name} joined the tycoon!`, sys: true });
+      return;
+    }
+
+    if (!player) return;
+
+    if (m.t === 'move') {
+      player.x = Math.max(0, Math.min(WORLD_W, +m.x || 0));
+      player.y = Math.max(0, Math.min(WORLD_H, +m.y || 0));
+      player.dir = +m.dir || 0;
+      return;
+    }
+
+    if (m.t === 'sync') {
+      // Trust the client's economy snapshot (fun game, not banking)
+      const s = m.stats || {};
+      const st = player.stats;
+      st.money = +s.money || 0;
+      st.tokens = +s.tokens || 0;
+      st.prestige = +s.prestige || 0;
+      st.level = +s.level || 1;
+      st.xp = +s.xp || 0;
+      st.genSlots = +s.genSlots || 6;
+      st.multi = +s.multi || 1;
+      if (Array.isArray(s.gens)) st.gens = s.gens.slice(0, 64);
+      return;
+    }
+
+    if (m.t === 'chat') {
+      const msg = ('' + (m.msg || '')).slice(0, 200);
+      if (msg.trim().length === 0) return;
+      broadcast({ t: 'chat', name: player.name, msg });
+      return;
+    }
+  });
+
+  ws.on('close', () => {
+    if (player) {
+      broadcast({ t: 'leave', id: player.id });
+      delete players[id];
+      saveAccounts();
+    }
+  });
+});
+
+// Lightweight per-player snapshot for rendering others (positions + builds)
+function snapshot() {
+  return Object.values(players).map(p => ({
+    id: p.id, name: p.name, x: Math.round(p.x), y: Math.round(p.y), dir: p.dir,
+    plot: p.plot, prestige: p.stats.prestige || 0, gens: p.stats.gens || []
+  }));
+}
+
+// Broadcast world state ~12 times a second
+setInterval(() => {
+  const snap = snapshot();
+  const msg = JSON.stringify({ t: 'players', list: snap });
+  for (const id in players) {
+    const p = players[id];
+    if (p.ws.readyState === 1) p.ws.send(msg);
+  }
+}, 80);
+
+// Broadcast leaderboard every 5s
+setInterval(() => {
+  broadcast({ t: 'leaderboard', list: leaderboard() });
+}, 5000);
+
+app.get('/healthz', (req, res) => res.send('ok'));
+server.listen(PORT, () => console.log('GCore Tycoon server on :' + PORT));
