@@ -1,6 +1,6 @@
 # GCore Web Tycoon 🟣
 
-A fully **online, multiplayer** generator tycoon for [gcoremc.com](https://gcoremc.com) — the GCore experience on the web. Players walk around a shared world, see each other in real time, claim a personal plot, build & upgrade generators through 10 tiers, prestige, earn tokens, climb a live leaderboard, and chat.
+A fully **online, multiplayer** generator tycoon for [gcoremc.com](https://gcoremc.com) — the GCore experience on the web. Players walk around a shared world, see each other in real time, claim a personal plot, build & upgrade generators through 31 tiers, prestige, earn tokens, climb a live leaderboard, and chat. Accounts are protected by a username + password so progress saves.
 
 Built to match the GCore site theme (purple/gold, Space Grotesk).
 
@@ -32,9 +32,9 @@ gcore-tycoon/
 
 ### The loop
 1. Spawn in the **hub**. Three pads: **Generator Shop**, **Token Shop**, **Prestige**.
-2. Buy a Carbon Gen → it drops cash on your plot → walk over drops to collect.
+2. Buy a Coal Gen → it drops cash on your plot → walk over drops to collect.
 3. Collecting gives **XP** → **levels** → **Tokens**.
-4. Upgrade gens through 10 tiers (Carbon → Amber). Spend Tokens on **+gen slots** and **+multiplier**.
+4. Upgrade gens through 31 tiers (Coal → Cosmic). Spend Tokens on **+gen slots** and **+multiplier**.
 5. Hit the prestige requirement → **Prestige** for +0.1x permanent multi and +2 gen slots.
 6. Climb the **Top Tycoons** leaderboard (ranked by prestige).
 

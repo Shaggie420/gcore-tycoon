@@ -27,14 +27,14 @@ canvas{display:block;position:fixed;inset:0}
 .stat .l{font-size:.6rem;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-top:3px}
 .v-money{color:var(--green)}.v-tok{color:var(--gold)}.v-pres{color:var(--pl)}.v-lvl{color:#60a5fa}.v-multi{color:#22d3ee}
 
-.topright{position:fixed;top:12px;right:12px;z-index:10;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.topright{position:fixed;top:12px;right:12px;z-index:12;display:flex;flex-direction:row;gap:8px;align-items:center}
 .btn{background:var(--purple);border:none;color:#fff;padding:9px 16px;border-radius:9px;font-weight:600;font-size:.85rem;cursor:pointer;font-family:inherit}
 .btn:hover{background:#7b3fad}
 .btn.ghost{background:rgba(18,18,26,.9);border:1px solid var(--border);color:var(--t2)}
 .btn.ghost:hover{color:var(--text)}
 
 /* LEADERBOARD */
-.lb{position:fixed;top:64px;right:12px;z-index:10;width:210px;background:rgba(18,18,26,.92);border:1px solid var(--border);border-radius:12px;padding:12px;backdrop-filter:blur(8px)}
+.lb{position:fixed;top:62px;right:12px;z-index:10;width:210px;background:rgba(18,18,26,.92);border:1px solid var(--border);border-radius:12px;padding:12px;backdrop-filter:blur(8px)}
 .lb h3{font-family:'Space Grotesk',sans-serif;font-size:.8rem;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
 .lb .row{display:flex;justify-content:space-between;font-size:.78rem;padding:3px 0;color:var(--t2)}
 .lb .row b{color:var(--text)}
@@ -82,6 +82,28 @@ canvas{display:block;position:fixed;inset:0}
 
 .controls{position:fixed;bottom:12px;right:12px;z-index:10;font-size:.72rem;color:var(--t3);text-align:right;line-height:1.5}
 .controls b{color:var(--t2)}
+
+/* MOBILE TOUCH CONTROLS (hidden until body.touch) */
+#joystick{position:fixed;bottom:28px;left:28px;width:130px;height:130px;border-radius:50%;background:rgba(18,18,26,.45);border:2px solid rgba(205,140,255,.3);z-index:14;display:none;touch-action:none}
+#joythumb{position:absolute;top:50%;left:50%;width:56px;height:56px;border-radius:50%;background:rgba(164,99,214,.85);border:2px solid #cd8cff;transform:translate(-50%,-50%)}
+.mbtn{position:fixed;z-index:14;display:none;width:66px;height:66px;border-radius:50%;border:2px solid rgba(205,140,255,.3);background:rgba(18,18,26,.55);color:#fff;font-size:1.7rem;cursor:pointer;font-family:inherit;align-items:center;justify-content:center}
+#sprintBtn{bottom:40px;right:30px}
+#sprintBtn.on{background:var(--purple);border-color:#fff}
+body.touch #joystick{display:block}
+body.touch .mbtn{display:flex}
+body.touch .controls{display:none}
+
+@media (max-width:820px){
+  .lb{width:148px;padding:9px;top:56px}
+  .lb h3{font-size:.72rem}
+  .lb .row{font-size:.7rem}
+  .hud{max-width:60vw;gap:6px}
+  .stat{padding:6px 9px}
+  .stat .v{font-size:.9rem}
+  .chat{width:54%;bottom:178px}
+  .chatlog{max-height:84px}
+  .btn{padding:7px 11px;font-size:.78rem}
+}
 </style>
 </head>
 <body>
@@ -89,8 +111,11 @@ canvas{display:block;position:fixed;inset:0}
 <div id="login">
     <h1>GCORE TYCOON</h1>
     <p>Build your empire — online with everyone</p>
-    <input id="nameInput" placeholder="Enter your name" maxlength="16" autocomplete="off">
+    <input id="nameInput" placeholder="Username" maxlength="16" autocomplete="off">
+    <input id="passInput" type="password" placeholder="Password" maxlength="40" autocomplete="off">
     <button onclick="doJoin()">Play</button>
+    <div id="loginErr" style="color:var(--red);font-size:.82rem;min-height:18px;text-align:center"></div>
+    <p style="color:var(--t3);font-size:.78rem;max-width:320px;text-align:center;margin-top:4px">New here? Pick a username + password to create your account. Your stats save to it — log back in anytime.</p>
 </div>
 
 <canvas id="game"></canvas>
@@ -122,7 +147,11 @@ canvas{display:block;position:fixed;inset:0}
     <input id="chatInput" placeholder="Press Enter to chat…" maxlength="200">
 </div>
 
-<div class="controls"><b>WASD</b> move · <b>E</b> interact · <b>Enter</b> chat</div>
+<div class="controls"><b>WASD</b> move · <b>Ctrl/Shift</b> sprint · <b>E</b> interact · <b>Enter</b> chat</div>
+
+<!-- Mobile touch controls (shown only on touch devices) -->
+<div id="joystick"><div id="joythumb"></div></div>
+<button id="sprintBtn" class="mbtn" title="Sprint">⚡</button>
 
 <div class="toast" id="toast"></div>
 
@@ -133,20 +162,23 @@ canvas{display:block;position:fixed;inset:0}
 
 <script>
 /* ============================================================
-   GENERATOR TIERS (mirrors the GCore server progression)
+   GENERATOR TIERS — 31 tiers (GCore progression)
+   Generated from names + a smooth scaling curve.
    ============================================================ */
-const TIERS = [
-  { name:'Carbon Gen',  val:5,        int:2400, color:'#6b7280', up:140 },
-  { name:'Scrap Gen',   val:24,       int:2200, color:'#9ca3af', up:800 },
-  { name:'Wire Gen',    val:110,      int:2000, color:'#cd8cff', up:4200 },
-  { name:'Bullion Gen', val:480,      int:1800, color:'#ffd700', up:22000 },
-  { name:'Mana Gen',    val:2100,     int:1600, color:'#4ade80', up:120000 },
-  { name:'Flux Gen',    val:9500,     int:1400, color:'#22d3ee', up:650000 },
-  { name:'Jade Gen',    val:44000,    int:1200, color:'#00ffaa', up:3200000 },
-  { name:'Reactor Gen', val:210000,   int:1000, color:'#ff5555', up:1.7e7 },
-  { name:'Silica Gen',  val:1050000,  int:820,  color:'#ff00ee', up:9e7 },
-  { name:'Amber Gen',   val:5200000,  int:650,  color:'#ffaa00', up:0 }
+const GEN_NAMES = [
+  'Coal','Copper','Iron','Carbon','Scrap','Bronze','Silver','Gold','Platinum','Emerald',
+  'Sapphire','Ruby','Amber','Crystal','Diamond','Obsidian','Mana','Flux','Plasma','Quartz',
+  'Jade','Titanium','Uranium','Reactor','Fusion','Voidstone','Antimatter','Quantum','Nebula','Stellar','Cosmic'
 ];
+const TIERS = GEN_NAMES.map((nm, i) => {
+  const val = Math.round(5 * Math.pow(1.82, i));            // drop value grows ~1.82x per tier
+  const int = Math.max(650, 2400 - i * 58);                 // faster early, floors at 650ms
+  const isLast = (i === GEN_NAMES.length - 1);
+  const up = isLast ? 0 : Math.round(val * 170 * Math.pow(1.04, i)); // cost to upgrade to next tier
+  const hue = Math.round((i / (GEN_NAMES.length - 1)) * 320 + 200) % 360;
+  const sat = 60 + Math.round((i / (GEN_NAMES.length - 1)) * 18);
+  return { name: nm + ' Gen', val, int, color: 'hsl(' + hue + ',' + sat + '%,60%)', up };
+});
 
 /* ============================================================
    STATE
@@ -171,19 +203,31 @@ let W,H; function resize(){ W=cv.width=innerWidth; H=cv.height=innerHeight; } ad
 /* ============================================================
    NETWORK
    ============================================================ */
+function loginErr(msg){ const e=document.getElementById('loginErr'); if(e) e.textContent=msg||''; }
+
 function doJoin(){
   const n = document.getElementById('nameInput').value.trim().replace(/[^a-zA-Z0-9_]/g,'');
-  if(n.length<2){ document.getElementById('nameInput').style.borderColor='var(--red)'; return; }
+  const pw = document.getElementById('passInput').value;
+  if(n.length<2){ document.getElementById('nameInput').style.borderColor='var(--red)'; loginErr('Username must be at least 2 characters.'); return; }
+  if((pw||'').length<3){ document.getElementById('passInput').style.borderColor='var(--red)'; loginErr('Password must be at least 3 characters.'); return; }
+  loginErr('Connecting…');
   MYNAME = n;
+  if(WS){ try{ WS.onclose=null; WS.close(); }catch(_){}}
   const proto = location.protocol==='https:'?'wss':'ws';
   WS = new WebSocket(proto+'://'+location.host);
-  WS.onopen = () => WS.send(JSON.stringify({t:'join', name:n}));
+  WS.onopen = () => WS.send(JSON.stringify({t:'join', name:n, pass:pw}));
   WS.onmessage = (e) => onMsg(JSON.parse(e.data));
-  WS.onclose = () => toast('Disconnected from server','red');
+  WS.onclose = () => { if(!started) loginErr('Could not reach the server. It may be waking up — try again in ~30s.'); else toast('Disconnected from server','red'); };
 }
 
 function onMsg(m){
+  if(m.t==='error'){
+    loginErr(m.msg||'Login failed.');
+    if(WS){ try{ WS.onclose=null; WS.close(); }catch(_){}}
+    return;
+  }
   if(m.t==='init'){
+    loginErr('');
     MYID = m.id; WORLD = m.world; myPlotRect = m.plotRect; myPlotIndex = m.you.plot;
     Object.assign(S, m.you.stats);
     if(!S.genSlots) S.genSlots=6; if(!S.multi) S.multi=1; if(!S.gens) S.gens=[];
@@ -277,7 +321,7 @@ function buyGenerator(){
   let slot=0; while(used.includes(slot)) slot++;
   S.gens.push({ tier:0, slot });
   updateHUD(); openShop('gens'); syncUp();
-  toast('Bought a Carbon Gen!','green');
+  toast('Bought a '+TIERS[0].name+'!','green');
 }
 function upgradeGen(i){
   const g=S.gens[i]; if(!g) return;
@@ -354,9 +398,9 @@ function openShop(id){
   openModalId=id;
   const m=document.getElementById('modal');
   if(id==='gens'){
-    let html='<span class="x" onclick="closeModal()">✕</span><h2>⚙ Generator Shop</h2><div class="sub">Buy generators, then upgrade them through 10 tiers.</div>';
+    let html='<span class="x" onclick="closeModal()">✕</span><h2>⚙ Generator Shop</h2><div class="sub">Buy generators, then upgrade them through all '+TIERS.length+' tiers.</div>';
     const cost=buyGenCost();
-    html+='<div class="shopitem"><div class="ico" style="background:#6b7280"></div><div class="info"><div class="nm">Buy Generator</div><div class="ds">Places a Carbon Gen ('+S.gens.length+'/'+S.genSlots+' slots used)</div></div><button class="buy" '+(S.money<cost||S.gens.length>=S.genSlots?'disabled':'')+' onclick="buyGenerator()">$'+fmt(cost)+'</button></div>';
+    html+='<div class="shopitem"><div class="ico" style="background:'+TIERS[0].color+'"></div><div class="info"><div class="nm">Buy Generator</div><div class="ds">Places a '+TIERS[0].name+' ('+S.gens.length+'/'+S.genSlots+' slots used)</div></div><button class="buy" '+(S.money<cost||S.gens.length>=S.genSlots?'disabled':'')+' onclick="buyGenerator()">$'+fmt(cost)+'</button></div>';
     if(S.gens.length){
       html+='<div class="sub" style="margin:14px 0 8px">Your generators (click to upgrade):</div>';
       S.gens.forEach((g,i)=>{
@@ -387,13 +431,20 @@ function goHub(){ me.x=WORLD.hub.x; me.y=WORLD.hub.y+140; }
 /* ============================================================
    INPUT
    ============================================================ */
+const MOVE_KEYS = {'w':1,'a':1,'s':1,'d':1};
 addEventListener('keydown',e=>{
   if(document.activeElement===document.getElementById('chatInput')) return;
-  keys[e.key.toLowerCase()]=1;
-  if(e.key.toLowerCase()==='e') tryInteract();
+  const k=e.key.toLowerCase();
+  keys[k]=1;
+  // While sprinting (Ctrl/Shift held) + moving, stop the browser hijacking the
+  // combo (Ctrl+W close tab, Ctrl+S save, Ctrl+A select, etc.)
+  if((e.ctrlKey||e.metaKey) && MOVE_KEYS[k]){ e.preventDefault(); }
+  if(k==='e') tryInteract();
   if(e.key==='Enter'){ document.getElementById('chatInput').focus(); }
 });
 addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
+// If the window loses focus mid-press, clear keys so movement/sprint don't stick.
+addEventListener('blur',()=>{ for(const k in keys) keys[k]=0; });
 document.getElementById('chatInput').addEventListener('keydown',e=>{
   if(e.key==='Enter'){
     const v=e.target.value.trim();
@@ -413,6 +464,30 @@ cv.addEventListener('click',e=>{
   }
 });
 
+/* ---- Mobile touch controls ---- */
+const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+if(IS_TOUCH) document.body.classList.add('touch');
+const joy = { active:false, dx:0, dy:0 };
+let mobileSprint = false;
+(function(){
+  const base=document.getElementById('joystick'), thumb=document.getElementById('joythumb');
+  const R=52; let cx=0, cy=0, tid=null;
+  function place(t){
+    let dx=t.clientX-cx, dy=t.clientY-cy; const d=Math.hypot(dx,dy);
+    if(d>R){ dx=dx/d*R; dy=dy/d*R; }
+    thumb.style.transform='translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px))';
+    joy.dx=dx/R; joy.dy=dy/R;
+  }
+  function start(t){ const r=base.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2; joy.active=true; tid=t.identifier; place(t); }
+  function end(){ joy.active=false; joy.dx=0; joy.dy=0; tid=null; thumb.style.transform='translate(-50%,-50%)'; }
+  base.addEventListener('touchstart',e=>{ e.preventDefault(); start(e.changedTouches[0]); },{passive:false});
+  base.addEventListener('touchmove',e=>{ e.preventDefault(); for(const t of e.changedTouches){ if(t.identifier===tid) place(t); } },{passive:false});
+  base.addEventListener('touchend',e=>{ for(const t of e.changedTouches){ if(t.identifier===tid) end(); } });
+  base.addEventListener('touchcancel',end);
+})();
+document.getElementById('sprintBtn').addEventListener('click',function(){ mobileSprint=!mobileSprint; this.classList.toggle('on',mobileSprint); });
+document.getElementById('hint').addEventListener('click', () => tryInteract());
+
 let nearPad=null;
 function tryInteract(){ if(nearPad) openShop(nearPad.id); }
 
@@ -422,20 +497,27 @@ function tryInteract(){ if(nearPad) openShop(nearPad.id); }
 let started=false, lastT=performance.now();
 function loop(now){
   const dt=Math.min(50, now-lastT); lastT=now;
-  // movement
+  // movement (keyboard + mobile joystick) — hold Ctrl/Shift (or the ⚡ button) to sprint
   let dx=0,dy=0;
   if(keys['w']||keys['arrowup'])dy-=1;
   if(keys['s']||keys['arrowdown'])dy+=1;
   if(keys['a']||keys['arrowleft'])dx-=1;
   if(keys['d']||keys['arrowright'])dx+=1;
-  if(dx||dy){ const l=Math.hypot(dx,dy); dx/=l;dy/=l; me.x+=dx*0.42*dt; me.y+=dy*0.42*dt; me.dir=dx; sendMove(); }
+  let mag=0;
+  if(dx||dy){ const l=Math.hypot(dx,dy); dx/=l; dy/=l; mag=1; }
+  if(joy.active && (joy.dx||joy.dy)){ dx=joy.dx; dy=joy.dy; mag=Math.min(1,Math.hypot(dx,dy)); }
+  if(mag>0.08){
+    const sprint = keys['control']||keys['shift']||mobileSprint;
+    const spd = (sprint?0.78:0.42)*dt;
+    me.x+=dx*spd; me.y+=dy*spd; me.dir=dx; sendMove();
+  }
   me.x=Math.max(20,Math.min(WORLD.w-20,me.x)); me.y=Math.max(20,Math.min(WORLD.h-20,me.y));
 
   // near a shop pad?
   nearPad=null;
   for(const pad of pads()){ if(Math.hypot(me.x-pad.x, me.y-pad.y)<90){ nearPad=pad; break; } }
   const hint=document.getElementById('hint');
-  if(nearPad && !openModalId){ hint.innerHTML='Press <b>E</b> · '+nearPad.name; hint.classList.add('show'); }
+  if(nearPad && !openModalId){ hint.innerHTML=(IS_TOUCH?'Tap to open':'Press <b>E</b>')+' · '+nearPad.name; hint.classList.add('show'); }
   else hint.classList.remove('show');
 
   // generators produce (only mine, on my plot)
@@ -560,7 +642,8 @@ function drawPlayer(x,y,label,color,isMe){
   ctx.fillStyle=isMe?'#cd8cff':'#e8e8f0'; ctx.fillText(label, x, y-27);
 }
 
-document.getElementById('nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doJoin(); });
+document.getElementById('nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('passInput').focus(); });
+document.getElementById('passInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doJoin(); });
 </script>
 </body>
 </html>

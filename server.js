@@ -10,7 +10,13 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
+
+// Hash a password before storing it (never store the raw password).
+function hashPass(p) {
+  return crypto.createHash('sha256').update('gcore_tycoon:' + p).digest('hex');
+}
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -54,7 +60,7 @@ function plotRect(index) {
 
 function blankStats() {
   return {
-    money: 0, tokens: 0, prestige: 0, level: 1, xp: 0,
+    money: 50, tokens: 0, prestige: 0, level: 1, xp: 0, // start with $50 to buy a first gen
     genSlots: 6, multi: 1,
     gens: [] // [{tier, slot}]
   };
@@ -87,9 +93,25 @@ wss.on('connection', (ws) => {
     if (m.t === 'join') {
       const name = ('' + (m.name || 'Player')).slice(0, 16).replace(/[^a-zA-Z0-9_]/g, '') || 'Player';
       const key = name.toLowerCase();
+      const pass = '' + (m.pass || '');
+      if (pass.length < 3) {
+        ws.send(JSON.stringify({ t: 'error', msg: 'Password must be at least 3 characters.' }));
+        return;
+      }
+      const ph = hashPass(pass);
       // Load or create the account
-      if (!accounts[key]) accounts[key] = { name, stats: blankStats(), plot: Object.keys(accounts).length };
+      if (!accounts[key]) {
+        // New account — claim this username + password
+        accounts[key] = { name, pass: ph, stats: blankStats(), plot: Object.keys(accounts).length };
+      }
       const acc = accounts[key];
+      // Migrate older accounts that have no password yet: first login sets it.
+      if (!acc.pass) acc.pass = ph;
+      // Verify the password for existing accounts.
+      if (acc.pass !== ph) {
+        ws.send(JSON.stringify({ t: 'error', msg: 'Wrong password for that username.' }));
+        return;
+      }
       acc.name = name;
       const spawn = { x: HUB.x, y: HUB.y + 120 };
       player = {
