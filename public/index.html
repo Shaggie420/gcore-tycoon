@@ -379,18 +379,77 @@ function makeHat(i){
   if(i===5){ const g=new THREE.Group(); const mat=new THREE.MeshLambertMaterial({color:0xe5e5e5}); const a=new THREE.Mesh(new THREE.ConeGeometry(4,14,8),mat); a.position.set(-7,60,0); const b=new THREE.Mesh(new THREE.ConeGeometry(4,14,8),mat); b.position.set(7,60,0); g.add(a); g.add(b); return g; }
   return null;
 }
-function makePlayer(skin){ const g=new THREE.Group(); const col=new THREE.Color(skin&&skin.body?skin.body:'#a463d6'); const body=new THREE.Mesh(new THREE.BoxGeometry(30,36,22),new THREE.MeshLambertMaterial({color:col})); body.position.y=18; g.add(body); const head=new THREE.Mesh(new THREE.BoxGeometry(22,20,20),new THREE.MeshLambertMaterial({color:0xf1d2a8})); head.position.y=46; g.add(head); const hat=makeHat(skin?skin.hat:0); if(hat) g.add(hat); return g; }
+function makePlayer(skin){
+  const g=new THREE.Group();
+  const col=new THREE.Color(skin&&skin.body?skin.body:'#a463d6');
+  const bodyMat=new THREE.MeshStandardMaterial({color:col, roughness:0.55, metalness:0.05});
+  const limbMat=new THREE.MeshStandardMaterial({color:col.clone().multiplyScalar(0.78), roughness:0.6});
+  const skinMat=new THREE.MeshStandardMaterial({color:0xf1d2a8, roughness:0.75});
+
+  // Legs (pivot at the hip so they can swing). Feet rest at y=0.
+  const legGeo=new THREE.BoxGeometry(9,20,9);
+  const lLeg=new THREE.Group(); const llm=new THREE.Mesh(legGeo,limbMat); llm.position.y=-10; lLeg.add(llm); lLeg.position.set(-6,20,0); g.add(lLeg);
+  const rLeg=new THREE.Group(); const rlm=new THREE.Mesh(legGeo,limbMat); rlm.position.y=-10; rLeg.add(rlm); rLeg.position.set(6,20,0); g.add(rLeg);
+
+  // Torso
+  const body=new THREE.Mesh(new THREE.BoxGeometry(26,28,16), bodyMat); body.position.y=34; g.add(body);
+
+  // Arms (pivot at the shoulder)
+  const armGeo=new THREE.BoxGeometry(7,24,7);
+  const lArm=new THREE.Group(); const lam=new THREE.Mesh(armGeo,bodyMat); lam.position.y=-11; lArm.add(lam); lArm.position.set(-16,46,0); g.add(lArm);
+  const rArm=new THREE.Group(); const ram=new THREE.Mesh(armGeo,bodyMat); ram.position.y=-11; rArm.add(ram); rArm.position.set(16,46,0); g.add(rArm);
+
+  // Head
+  const head=new THREE.Mesh(new THREE.BoxGeometry(20,18,18), skinMat); head.position.y=58; g.add(head);
+
+  // Hat (makeHat is tuned for the old head height — lift it onto the new head)
+  const hat=makeHat(skin?skin.hat:0); if(hat){ hat.position.y += 12; g.add(hat); }
+
+  // Cheap soft "blob" shadow so characters feel grounded
+  const shadow=new THREE.Mesh(new THREE.CircleGeometry(19,22), new THREE.MeshBasicMaterial({color:0x000000, transparent:true, opacity:0.26, depthWrite:false}));
+  shadow.rotation.x=-Math.PI/2; shadow.position.y=0.6; g.add(shadow);
+
+  g.userData={ lArm, rArm, lLeg, rLeg, body, head, shadow, phase:0 };
+  return g;
+}
+
+// Animate a character: swing limbs while walking, bob + idle-breathe at rest.
+function animChar(pm, moving, speed, dt){
+  const ud=pm.g.userData; if(!ud||!ud.lLeg) return;
+  if(moving){
+    ud.phase += dt*0.013*(0.7+speed);
+    const amp=Math.min(1, 0.45+speed)*0.8, sw=Math.sin(ud.phase)*amp;
+    ud.lLeg.rotation.x=sw;  ud.rLeg.rotation.x=-sw;
+    ud.lArm.rotation.x=-sw; ud.rArm.rotation.x=sw;
+    ud.body.position.y=34+Math.abs(Math.sin(ud.phase))*2.4;
+    ud.head.rotation.z=Math.sin(ud.phase)*0.04;
+  } else {
+    ud.lLeg.rotation.x*=0.78; ud.rLeg.rotation.x*=0.78; ud.lArm.rotation.x*=0.78; ud.rArm.rotation.x*=0.78;
+    ud.body.position.y=34+Math.sin(performance.now()*0.0022)*0.9;
+    ud.head.rotation.z*=0.8;
+  }
+}
+// Smoothly rotate a character to face a target heading (radians).
+function faceDir(pm, target){
+  let cur=pm.g.rotation.y, d=target-cur;
+  while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI;
+  pm.g.rotation.y=cur+d*0.22;
+}
 
 function init3D(){
   const cv=document.getElementById('game');
   renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true}); renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1)); renderer.setSize(innerWidth,innerHeight);
-  scene=new THREE.Scene(); scene.background=new THREE.Color(0x121022); scene.fog=new THREE.Fog(0x121022,1800,4200);
+  if(THREE.sRGBEncoding!==undefined) renderer.outputEncoding=THREE.sRGBEncoding;  // correct, vibrant colour
+  scene=new THREE.Scene(); scene.background=new THREE.Color(0x241d4a); scene.fog=new THREE.Fog(0x241d4a,2300,5400);
   camera=new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 1, 12000);
   raycaster=new THREE.Raycaster(); pointer=new THREE.Vector2();
-  scene.add(new THREE.AmbientLight(0xffffff,0.8));
-  const dl=new THREE.DirectionalLight(0xffffff,0.6); dl.position.set(600,1200,400); scene.add(dl);
-  const gp=new THREE.Mesh(new THREE.PlaneGeometry(WORLD.w*2.4,WORLD.h*2.4), new THREE.MeshLambertMaterial({color:0x0f0f18})); gp.rotation.x=-Math.PI/2; gp.position.set(WORLD.w/2,-3,WORLD.h/2); scene.add(gp);
-  const grid=new THREE.GridHelper(Math.max(WORLD.w,WORLD.h)*2.4,110,0x3a2a55,0x1a1a28); grid.position.set(WORLD.w/2,-1,WORLD.h/2); scene.add(grid);
+  // Stylised lighting: soft sky/ground fill + warm key + cool rim
+  scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x3a2a5e, 0.95));
+  scene.add(new THREE.AmbientLight(0xffffff,0.32));
+  const dl=new THREE.DirectionalLight(0xfff0d6,1.15); dl.position.set(700,1400,500); scene.add(dl);
+  const dl2=new THREE.DirectionalLight(0x8fa8ff,0.4); dl2.position.set(-600,600,-750); scene.add(dl2);
+  const gp=new THREE.Mesh(new THREE.PlaneGeometry(WORLD.w*2.4,WORLD.h*2.4), new THREE.MeshLambertMaterial({color:0x241f3e})); gp.rotation.x=-Math.PI/2; gp.position.set(WORLD.w/2,-3,WORLD.h/2); scene.add(gp);
+  const grid=new THREE.GridHelper(Math.max(WORLD.w,WORLD.h)*2.4,110,0x6a4fa0,0x2e2748); grid.position.set(WORLD.w/2,-1,WORLD.h/2); scene.add(grid);
   buildWorld();
   addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
   // pointer/look + click
@@ -455,18 +514,24 @@ function onSceneClick(e){ if(IS_TOUCH){ return; } if(openModalId||didDrag){ didD
 function doTouchTap(cx,cy){ if(openModalId) return; pointer.x=(cx/innerWidth)*2-1; pointer.y=-(cy/innerHeight)*2+1; raycaster.setFromCamera(pointer,camera); handleHit(raycaster.intersectObjects(scene.children,true)); }
 
 function rebuildPlayer(key, skin, color, isMe){ if(playerMeshes[key]){ scene.remove(playerMeshes[key].g); scene.remove(playerMeshes[key].label); } const g=makePlayer(skin||{body:color,hat:0}); const label=makeLabel('',isMe?'#cd8cff':'#e8e8f0'); scene.add(g); scene.add(label); playerMeshes[key]={g,label,_skin:JSON.stringify(skin||{}),_pres:-1}; return playerMeshes[key]; }
-function update3D(){
+function update3D(dt){
+  dt=dt||16;
   // me
   if(!playerMeshes['me'] || skinDirty){ rebuildPlayer('me', S.skin, '#a463d6', true); skinDirty=false; }
   const meM=playerMeshes['me']; meM.g.position.set(me.x,0,me.y);
+  if(me.moving) faceDir(meM, me.faceAngle||0);
+  animChar(meM, !!me.moving, me.speed||0, dt);
   if(meM._pres!==S.prestige){ setLabel(meM.label, MYNAME+' · P'+S.prestige, '#cd8cff'); meM._pres=S.prestige; }
-  meM.label.position.set(me.x,92,me.y);
+  meM.label.position.set(me.x,100,me.y);
   meM.g.visible = (povMode!==0);
-  // others
+  // others — derive facing/walk from their interpolated movement
   const seen={me:1};
   for(const id in others){ const o=others[id]; seen[id]=1; let pm=playerMeshes[id]; const sk=JSON.stringify(o.skin||{});
     if(!pm || pm._skin!==sk){ pm=rebuildPlayer(id, o.skin, '#7b6fae', false); }
-    pm.g.position.set(o.rx,0,o.ry); pm.g.visible=true; pm.label.position.set(o.rx,92,o.ry);
+    const dx=o.rx-(pm._px==null?o.rx:pm._px), dz=o.ry-(pm._pz==null?o.ry:pm._pz), omov=Math.hypot(dx,dz);
+    if(omov>0.4) faceDir(pm, Math.atan2(dx,dz));
+    animChar(pm, omov>0.4, Math.min(1,omov*0.1), dt); pm._px=o.rx; pm._pz=o.ry;
+    pm.g.position.set(o.rx,0,o.ry); pm.g.visible=true; pm.label.position.set(o.rx,100,o.ry);
     if(pm._pres!==o.prestige){ setLabel(pm.label, o.name+' · P'+o.prestige, '#e8e8f0'); pm._pres=o.prestige; }
   }
   for(const id in playerMeshes){ if(!seen[id]){ scene.remove(playerMeshes[id].g); scene.remove(playerMeshes[id].label); delete playerMeshes[id]; } }
@@ -474,8 +539,13 @@ function update3D(){
   if(farmColorDirty){ const col=new THREE.Color(cropColor(S.activeCrop)); for(const p of farmPlants) p.material.color.copy(col); farmColorDirty=false; }
   // camera
   const cy=Math.cos(camPitch); const dirX=Math.sin(camYaw)*cy, dirY=Math.sin(camPitch), dirZ=-Math.cos(camYaw)*cy;
-  if(povMode===0){ const ex=me.x, ey=46, ez=me.y; camera.position.set(ex,ey,ez); camera.lookAt(ex+dirX*60, ey+dirY*60, ez+dirZ*60); }
-  else { const dist=(povMode===1)?230:560, ht=(povMode===1)?150:430; camera.position.set(me.x-dirX*dist, ht, me.y-dirZ*dist); camera.lookAt(me.x, 24, me.y); }
+  if(povMode===0){ const ex=me.x, ey=54, ez=me.y; camera.position.set(ex,ey,ez); camera.lookAt(ex+dirX*60, ey+dirY*60, ez+dirZ*60); }
+  else {
+    const dist=(povMode===1)?245:585, ht=(povMode===1)?168:455;
+    const tx=me.x-dirX*dist, tz=me.y-dirZ*dist, k=Math.min(1, dt*0.012);
+    camera.position.x+=(tx-camera.position.x)*k; camera.position.y+=(ht-camera.position.y)*k; camera.position.z+=(tz-camera.position.z)*k;
+    camera.lookAt(me.x, 32, me.y);
+  }
   renderer.render(scene,camera);
   updateGenTags();
 }
@@ -493,7 +563,8 @@ function loop(now){
     if(keys['a']||keys['arrowleft']){ mvx-=rgtX; mvz-=rgtZ; }
     if(joy.active){ const f=-joy.dy, r=joy.dx; mvx+=f*fwdX+r*rgtX; mvz+=f*fwdZ+r*rgtZ; }
     let mag=Math.hypot(mvx,mvz), moving=false;
-    if(mag>0.08){ mvx/=mag; mvz/=mag; const moveMag=Math.min(1,mag); const sprint=keys['control']||keys['shift']||mobileSprint; const spd=(sprint?0.82:0.45)*dt*moveMag; me.x+=mvx*spd; me.y+=mvz*spd; me.dir=mvx; sendMove(); moving=true; }
+    if(mag>0.08){ mvx/=mag; mvz/=mag; const moveMag=Math.min(1,mag); const sprint=keys['control']||keys['shift']||mobileSprint; const spd=(sprint?0.82:0.45)*dt*moveMag; me.x+=mvx*spd; me.y+=mvz*spd; me.dir=mvx; me.faceAngle=Math.atan2(mvx,mvz); me.moving=true; me.speed=moveMag*(sprint?1.5:1); sendMove(); moving=true; }
+    else { me.moving=false; me.speed=0; }
     me.x=Math.max(20,Math.min(WORLD.w-20,me.x)); me.y=Math.max(20,Math.min(WORLD.h-20,me.y));
     // shop proximity
     nearPad=null; for(const pad of pads()){ if(Math.hypot(me.x-pad.x, me.y-pad.y)<120){ nearPad=pad; break; } }
@@ -506,7 +577,7 @@ function loop(now){
     // interpolate others
     for(const id in others){ const o=others[id]; o.rx+=(o.x-o.rx)*0.2; o.ry+=(o.y-o.ry)*0.2; }
     document.getElementById('crosshair').style.display = (povMode===0 && !openModalId) ? 'block':'none';
-    if(world3DReady) update3D();
+    if(world3DReady) update3D(dt);
   }catch(err){ console.error('loop',err); }
   requestAnimationFrame(loop);
 }
