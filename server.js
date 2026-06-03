@@ -29,12 +29,61 @@ const DATA_DIR = process.env.DATA_DIR && fs.existsSync(process.env.DATA_DIR) ? p
 const SAVE_FILE = path.join(DATA_DIR, 'tycoondata.json');
 
 // ---- Persistent account store (keyed by lowercase name) ----
+// Durable by env var: if MONGODB_URI is set we save to a (free) cloud database
+// so accounts survive restarts on ANY host. With no URI we fall back to the
+// local JSON file — fine on your own PC, but ephemeral hosts (Render free tier,
+// etc.) wipe that file on restart/sleep, which is why saves were disappearing.
 let accounts = {};
+let mongoCol = null;
 try { accounts = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf8')); } catch (e) { accounts = {}; }
-function saveAccounts() {
+
+function saveToFile() {
   try { fs.writeFileSync(SAVE_FILE, JSON.stringify(accounts)); } catch (e) {}
 }
+
+async function saveAccounts() {
+  if (mongoCol) {
+    try {
+      const ops = Object.keys(accounts).map(k => ({
+        updateOne: { filter: { _id: k }, update: { $set: { data: accounts[k] } }, upsert: true }
+      }));
+      if (ops.length) await mongoCol.bulkWrite(ops);
+      return;
+    } catch (e) { console.error('[store] mongo save failed, writing file instead:', e.message); }
+  }
+  saveToFile();
+}
+
+async function initStore() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    if (process.env.DATA_DIR && DATA_DIR === process.env.DATA_DIR) {
+      console.log('[store] ✅ DURABLE — saving to persistent volume: ' + SAVE_FILE);
+    } else {
+      console.log('[store] ⚠️ EPHEMERAL FILE mode — data will be wiped on restart. Attach a volume + set DATA_DIR (or set MONGODB_URI).');
+    }
+    return;
+  }
+  try {
+    const { MongoClient } = require('mongodb');
+    const client = new MongoClient(uri);
+    await client.connect();
+    mongoCol = client.db(process.env.MONGODB_DB || 'gcore_tycoon').collection('accounts');
+    const docs = await mongoCol.find({}).toArray();
+    if (docs.length) { accounts = {}; for (const d of docs) accounts[d._id] = d.data; }
+    console.log('[store] MongoDB connected — loaded ' + docs.length + ' account(s); saves are now permanent');
+  } catch (e) {
+    console.error('[store] MongoDB unavailable (' + e.message + ') — falling back to local file');
+    mongoCol = null;
+  }
+}
+initStore();
+
 setInterval(saveAccounts, 15000);
+// Flush one last time when the host stops/restarts the instance.
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, async () => { try { await saveAccounts(); } catch (e) {} process.exit(0); });
+}
 
 // ---- Live players (this session) ----
 // id -> { ws, name, key, x, y, plot, dir, stats }
